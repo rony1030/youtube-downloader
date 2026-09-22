@@ -8,15 +8,11 @@
     "dev": "nodemon server.js"
   },
   "dependencies": {
-    "@distube/ytdl-core": "^4.16.12",
     "cors": "^2.8.5",
     "express": "^4.18.2",
     "ffmpeg-static": "^5.2.0",
-    "fluent-ffmpeg": "^2.1.2",
     "fs-extra": "^11.1.1",
-    "multer": "^1.4.5-lts.1",
-    "path": "^0.12.7",
-    "ytdl-core": "npm:@distube/ytdl-core@^4.16.12"
+    "youtube-dl-exec": "^3.1.15"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"

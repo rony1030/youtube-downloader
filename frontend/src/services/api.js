@@ -1,32 +1,19 @@
-import axios from 'axios';
+import axios from "axios";
 
-const API_BASE_URL = 'http://localhost:5000/api';
-
-const api = axios.create({
-  baseURL: API_BASE_URL,
-  timeout: 30000,
-});
+const api = axios.create({ baseURL: import.meta.env.VITE_API_URL || "/api", timeout: 10 * 60 * 1000 });
+const messageFrom = (error, fallback) => error.response?.data?.error || (error.code === "ECONNABORTED" ? "La operación tardó demasiado." : fallback);
 
 export const getVideoInfo = async (url) => {
-  try {
-    const response = await api.post('/video/info', { url });
-    return response.data;
-  } catch (error) {
-    throw error.response?.data || { error: 'Network error' };
-  }
+  try { return (await api.post("/video/info", { url })).data; }
+  catch (error) { throw new Error(messageFrom(error, "No pudimos conectar con el servidor.")); }
 };
 
-export const downloadVideo = async (url, quality = 'high', format = 'mp4') => {
-  try {
-    const response = await api.post('/video/download', {
-      url,
-      quality,
-      format,
-    });
-    return response.data;
-  } catch (error) {
-    throw error.response?.data || { error: 'Network error' };
-  }
+export const downloadVideo = async (url, quality, format) => {
+  try { return (await api.post("/video/download", { url, quality, format })).data; }
+  catch (error) { throw new Error(messageFrom(error, "No se pudo completar la descarga.")); }
 };
 
-export default api;
+export const fileUrl = (filePath) => {
+  const configured = import.meta.env.VITE_API_URL;
+  return configured ? `${configured.replace(/\/api\/?$/, "")}${filePath}` : filePath;
+};

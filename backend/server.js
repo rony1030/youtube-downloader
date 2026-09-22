@@ -27,6 +27,15 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'Server is running!' });
 });
 
+// In production, serve the compiled React application from this same service.
+const frontendDist = path.join(__dirname, '../frontend/dist');
+if (process.env.NODE_ENV === 'production' && fs.existsSync(frontendDist)) {
+  app.use(express.static(frontendDist));
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(frontendDist, 'index.html'));
+  });
+}
+
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });

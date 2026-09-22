@@ -1,66 +1,26 @@
-import React, { useState } from "react";
-import { FaDownload, FaSpinner } from "react-icons/fa";
+import { useEffect, useMemo, useState } from "react";
+import { FaDownload, FaMusic, FaVideo } from "react-icons/fa";
 
-const DownloadButton = ({ onDownload, disabled }) => {
-  const [quality, setQuality] = useState("high");
-  const [format, setFormat] = useState("mp4");
-  const [loading, setLoading] = useState(false);
+const audioQualities = [{ value: "128", label: "128 kbps", hint: "Ligero" }, { value: "192", label: "192 kbps", hint: "Recomendado" }, { value: "320", label: "320 kbps", hint: "Máxima" }];
 
-  const handleDownload = async () => {
-    setLoading(true);
-    try {
-      await onDownload(quality, format);
-    } finally {
-      setLoading(false);
-    }
-  };
+const DownloadButton = ({ videoInfo, onDownload, disabled }) => {
+  const [format, setFormat] = useState("mp3");
+  const videoQualities = useMemo(() => videoInfo.qualities?.length ? videoInfo.qualities : [{ value: "360", label: "360p" }], [videoInfo]);
+  const [quality, setQuality] = useState("192");
+  const options = format === "mp3" ? audioQualities : videoQualities;
+
+  useEffect(() => setQuality(format === "mp3" ? "192" : (videoQualities.find((item) => item.value === "720")?.value || videoQualities[0].value)), [format, videoQualities]);
 
   return (
-    <div className="download-section">
-      <div className="download-options">
-        <div className="option-group">
-          <label>Quality:</label>
-          <select
-            value={quality}
-            onChange={(e) => setQuality(e.target.value)}
-            disabled={loading || disabled}
-          >
-            <option value="high">360p</option>
-            <option value="medium">1080p</option>
-            {/* <option value="low">Low Quality</option> */}
-          </select>
-        </div>
-
-        <div className="option-group">
-          <label>Format:</label>
-          <select
-            value={format}
-            onChange={(e) => setFormat(e.target.value)}
-            disabled={loading || disabled}
-          >
-            <option value="mp4">MP4 (Video)</option>
-            <option value="mp3">MP3 (Audio Only)</option>
-          </select>
-        </div>
+    <div className="download-panel">
+      <div className="panel-row">
+        <div><span className="step-label">1 · Formato</span><div className="format-toggle">
+          <button className={format === "mp3" ? "active" : ""} onClick={() => setFormat("mp3")} type="button"><FaMusic /> MP3 <small>Audio</small></button>
+          <button className={format === "mp4" ? "active" : ""} onClick={() => setFormat("mp4")} type="button"><FaVideo /> MP4 <small>Video</small></button>
+        </div></div>
+        <div className="quality-block"><label className="step-label" htmlFor="quality">2 · Calidad</label><select id="quality" value={quality} onChange={(event) => setQuality(event.target.value)}>{options.map((item) => <option key={item.value} value={item.value}>{item.label}{item.hint ? ` · ${item.hint}` : ""}</option>)}</select></div>
       </div>
-
-      <button
-        onClick={handleDownload}
-        disabled={loading || disabled}
-        className="download-btn"
-      >
-        {loading ? (
-          <>
-            <FaSpinner className="spinner" />
-            Processing...
-          </>
-        ) : (
-          <>
-            <FaDownload />
-            Download
-          </>
-        )}
-      </button>
+      <button className="download-btn" onClick={() => onDownload(quality, format)} disabled={disabled}>{disabled ? <><span className="loader" /> Preparando…</> : <><FaDownload /> Descargar {format.toUpperCase()}</>}</button>
     </div>
   );
 };

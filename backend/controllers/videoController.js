@@ -1,167 +1,77 @@
-const ytdl = require("@distube/ytdl-core");
 const fs = require("fs-extra");
 const path = require("path");
-const ffmpeg = require("fluent-ffmpeg");
+const youtubedl = require("youtube-dl-exec");
 const ffmpegPath = require("ffmpeg-static");
 
-// Set ffmpeg path
-ffmpeg.setFfmpegPath(ffmpegPath);
+const downloadsDir = path.join(__dirname, "../downloads");
+
+const parseUrl = (value = "") => {
+  const url = value.trim();
+  try {
+    const parsed = new URL(url);
+    if (!["youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be", "music.youtube.com"].includes(parsed.hostname)) throw new Error();
+  } catch {
+    const error = new Error("Pega un enlace válido de YouTube.");
+    error.status = 400;
+    throw error;
+  }
+  return url;
+};
+
+const safeFileName = (title) => title.normalize("NFKD").replace(/[<>:"/\\|?*\u0000-\u001F]/g, "").replace(/\s+/g, " ").trim().slice(0, 90) || "youtube-download";
+
+const infoFlags = { dumpSingleJson: true, noWarnings: true, noPlaylist: true, skipDownload: true };
 
 const getVideoInfo = async (req, res) => {
   try {
-    const { url } = req.body;
-
-    if (!url) {
-      return res.status(400).json({ error: "URL is required" });
-    }
-
-    // Clean the URL to remove any extra parameters
-    const cleanUrl = url.trim();
-    
-    if (!ytdl.validateURL(cleanUrl)) {
-      return res.status(400).json({ error: "Invalid YouTube URL" });
-    }
-
-    console.log(`Attempting to get info for: ${cleanUrl}`);
-
-    // Add additional options to help with extraction
-    const info = await ytdl.getInfo(cleanUrl, {
-      requestOptions: {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        }
-      }
+    const url = parseUrl(req.body.url);
+    const info = await youtubedl(url, infoFlags);
+    const heights = new Set((info.formats || []).filter((item) => item.vcodec !== "none" && item.height && item.height <= 1080).map((item) => item.height));
+    res.json({
+      success: true,
+      data: {
+        title: info.title,
+        thumbnail: info.thumbnail,
+        duration: Number(info.duration || 0),
+        author: info.uploader || info.channel || "YouTube",
+        viewCount: Number(info.view_count || 0),
+        uploadDate: info.upload_date,
+        qualities: [...heights].sort((a, b) => b - a).map((height) => ({ value: String(height), label: `${height}p` })),
+      },
     });
-
-    const videoDetails = {
-      title: info.videoDetails.title,
-      thumbnail: info.videoDetails.thumbnails[0]?.url,
-      duration: info.videoDetails.lengthSeconds,
-      author: info.videoDetails.author.name,
-      viewCount: info.videoDetails.viewCount,
-      uploadDate: info.videoDetails.uploadDate,
-      description: info.videoDetails.description?.substring(0, 200) + "...",
-    };
-
-    console.log(`Successfully got info for: ${videoDetails.title}`);
-    res.json({ success: true, data: videoDetails });
   } catch (error) {
-    console.error("Error getting video info:", error.message);
-    console.error("Full error:", error);
-    res.status(500).json({ 
-      error: "Failed to get video information", 
-      details: error.message 
-    });
+    console.error("Could not read video info:", error.message);
+    res.status(error.status || 500).json({ error: error.status ? error.message : "No pudimos leer este video. Puede ser privado o estar restringido." });
   }
 };
 
 const downloadVideo = async (req, res) => {
+  let filePath;
   try {
-    const { url, quality, format } = req.body;
+    const url = parseUrl(req.body.url);
+    const format = req.body.format === "mp3" ? "mp3" : "mp4";
+    const quality = String(req.body.quality || (format === "mp3" ? "192" : "720"));
+    const info = await youtubedl(url, infoFlags);
+    const fileName = `${safeFileName(info.title)}-${Date.now()}.${format}`;
+    filePath = path.join(downloadsDir, fileName);
+    await fs.ensureDir(downloadsDir);
 
-    if (!url) {
-      return res.status(400).json({ error: "URL is required" });
-    }
-
-    const cleanUrl = url.trim();
-
-    if (!ytdl.validateURL(cleanUrl)) {
-      return res.status(400).json({ error: "Invalid YouTube URL" });
-    }
-
-    console.log(`Starting download for: ${cleanUrl}`);
-
-    const info = await ytdl.getInfo(cleanUrl, {
-      requestOptions: {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        }
-      }
-    });
-
-    const title = info.videoDetails.title.replace(/[^\w\s\-_]/gi, "");
-    const fileName = `${title}_${Date.now()}.${format || "mp4"}`;
-    const filePath = path.join(__dirname, "../downloads", fileName);
-
+    const common = { output: filePath, noPlaylist: true, noWarnings: true, ffmpegLocation: ffmpegPath };
     if (format === "mp3") {
-      // Download audio only
-      const audioStream = ytdl(cleanUrl, {
-        quality: "highestaudio",
-        filter: "audioonly",
-        requestOptions: {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-          }
-        }
-      });
-
-      ffmpeg(audioStream)
-        .audioBitrate(128)
-        .format('mp3')
-        .save(filePath)
-        .on("end", () => {
-          console.log(`Audio download completed: ${fileName}`);
-          res.json({
-            success: true,
-            downloadUrl: `/downloads/${fileName}`,
-            fileName: fileName,
-          });
-        })
-        .on("error", (err) => {
-          console.error("FFmpeg error:", err);
-          res.status(500).json({ error: "Failed to process audio" });
-        });
+      const bitrate = ["128", "192", "320"].includes(quality) ? quality : "192";
+      await youtubedl(url, { ...common, extractAudio: true, audioFormat: "mp3", audioQuality: `${bitrate}K` });
     } else {
-      // Download video
-      let videoQuality = "highest";
-
-      if (quality === "low") videoQuality = "lowest";
-      else if (quality === "medium") videoQuality = "highestvideo";
-
-      const videoStream = ytdl(cleanUrl, {
-        quality: videoQuality,
-        format: "mp4",
-        requestOptions: {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-          }
-        }
-      });
-
-      const writeStream = fs.createWriteStream(filePath);
-
-      videoStream.pipe(writeStream);
-
-      writeStream.on("finish", () => {
-        console.log(`Video download completed: ${fileName}`);
-        res.json({
-          success: true,
-          downloadUrl: `/downloads/${fileName}`,
-          fileName: fileName,
-        });
-      });
-
-      writeStream.on("error", (error) => {
-        console.error("Download error:", error);
-        res.status(500).json({ error: "Failed to download video" });
-      });
-
-      videoStream.on("error", (error) => {
-        console.error("Stream error:", error);
-        res.status(500).json({ error: "Failed to stream video" });
-      });
+      const height = /^\d{3,4}$/.test(quality) ? quality : "720";
+      await youtubedl(url, { ...common, format: `bv*[height<=${height}]+ba/b[height<=${height}]`, mergeOutputFormat: "mp4" });
     }
+
+    res.json({ success: true, downloadUrl: `/downloads/${encodeURIComponent(fileName)}`, fileName });
+    setTimeout(() => fs.remove(filePath).catch(() => {}), 30 * 60 * 1000).unref();
   } catch (error) {
-    console.error("Error downloading video:", error.message);
-    console.error("Full error:", error);
-    res.status(500).json({ 
-      error: "Failed to download video", 
-      details: error.message 
-    });
+    console.error("Download failed:", error.message);
+    if (filePath) await fs.remove(filePath).catch(() => {});
+    if (!res.headersSent) res.status(error.status || 500).json({ error: error.status ? error.message : "No se pudo preparar la descarga. Intenta otra calidad." });
   }
 };
 
-module.exports = {
-  getVideoInfo,
-  downloadVideo,
-};
+module.exports = { getVideoInfo, downloadVideo };

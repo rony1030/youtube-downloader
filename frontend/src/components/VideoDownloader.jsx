@@ -1,124 +1,82 @@
-import React, { useState } from 'react';
-import { getVideoInfo, downloadVideo } from '../services/api';
-import VideoInfo from './VideoInfo';
-import DownloadButton from './DownloadButton';
-import { FaYoutube, FaLink } from 'react-icons/fa';
+import { useState } from "react";
+import { FaArrowRight, FaBolt, FaCheckCircle, FaLink, FaMusic, FaPlay } from "react-icons/fa";
+import { downloadVideo, fileUrl, getVideoInfo } from "../services/api";
+import DownloadButton from "./DownloadButton";
+import VideoInfo from "./VideoInfo";
 
 const VideoDownloader = () => {
-  const [url, setUrl] = useState('');
+  const [url, setUrl] = useState("");
   const [videoInfo, setVideoInfo] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [downloadStatus, setDownloadStatus] = useState('');
+  const [downloading, setDownloading] = useState(false);
+  const [notice, setNotice] = useState(null);
 
-  const handleGetInfo = async () => {
-    if (!url.trim()) {
-      setError('Please enter a YouTube URL');
-      return;
-    }
-
-    setLoading(true);
-    setError('');
-    setVideoInfo(null);
-
-    try {
-      const response = await getVideoInfo(url);
-      if (response.success) {
-        setVideoInfo(response.data);
-      } else {
-        setError('Failed to get video information');
-      }
-    } catch (err) {
-      setError(err.error || 'Failed to get video information');
-    } finally {
-      setLoading(false);
-    }
+  const handleGetInfo = async (event) => {
+    event.preventDefault();
+    if (!url.trim()) return setNotice({ type: "error", text: "Pega primero un enlace de YouTube." });
+    setLoading(true); setNotice(null); setVideoInfo(null);
+    try { setVideoInfo((await getVideoInfo(url)).data); }
+    catch (error) { setNotice({ type: "error", text: error.message }); }
+    finally { setLoading(false); }
   };
 
   const handleDownload = async (quality, format) => {
-    setDownloadStatus('Starting download...');
-    setError('');
-
+    setDownloading(true); setNotice({ type: "progress", text: "Estamos preparando tu archivo. Puede tardar un momento…" });
     try {
       const response = await downloadVideo(url, quality, format);
-      if (response.success) {
-        setDownloadStatus('Download completed!');
-        
-        // Create download link
-        const link = document.createElement('a');
-        link.href = `http://localhost:5000${response.downloadUrl}`;
-        link.download = response.fileName;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        
-        setTimeout(() => setDownloadStatus(''), 3000);
-      } else {
-        setError('Download failed');
-        setDownloadStatus('');
-      }
-    } catch (err) {
-      setError(err.error || 'Download failed');
-      setDownloadStatus('');
-    }
+      const link = document.createElement("a");
+      link.href = fileUrl(response.downloadUrl); link.download = response.fileName;
+      document.body.appendChild(link); link.click(); link.remove();
+      setNotice({ type: "success", text: "¡Listo! Tu descarga acaba de comenzar." });
+    } catch (error) { setNotice({ type: "error", text: error.message }); }
+    finally { setDownloading(false); }
   };
 
-  const handleUrlChange = (e) => {
-    setUrl(e.target.value);
-    setError('');
-    setVideoInfo(null);
-    setDownloadStatus('');
+  const resetUrl = (event) => {
+    setUrl(event.target.value); setVideoInfo(null); setNotice(null);
   };
 
   return (
-    <div className="video-downloader">
-      <div className="header">
-        <FaYoutube className="youtube-icon" />
-        <h1>YouTube Video Downloader</h1>
-      </div>
+    <main className="page-shell">
+      <nav className="nav">
+        <a className="brand" href="#" aria-label="Inicio"><span className="brand-mark"><FaPlay /></span><span>Tubo</span></a>
+        <span className="nav-note"><span /> Gratis · Sin registro</span>
+      </nav>
 
-      <div className="url-input-section">
-        <div className="input-group">
-          <FaLink className="link-icon" />
-          <input
-            type="text"
-            placeholder="Paste YouTube URL here..."
-            value={url}
-            onChange={handleUrlChange}
-            disabled={loading}
-          />
-          <button 
-            onClick={handleGetInfo}
-            disabled={loading || !url.trim()}
-            className="get-info-btn"
-          >
-            {loading ? 'Loading...' : 'Get Info'}
+      <section className="hero">
+        <div className="eyebrow"><FaBolt /> Rápido, limpio y fácil</div>
+        <h1>Tu música y videos,<br /><em>siempre contigo.</em></h1>
+        <p className="hero-copy">Pega un enlace de YouTube, elige tu formato favorito y descarga. Así de simple.</p>
+
+        <form className="search-card" onSubmit={handleGetInfo}>
+          <div className="url-field">
+            <FaLink aria-hidden="true" />
+            <input type="url" inputMode="url" placeholder="Pega aquí el enlace de YouTube…" value={url} onChange={resetUrl} disabled={loading || downloading} aria-label="Enlace de YouTube" />
+          </div>
+          <button className="primary-btn" disabled={loading || downloading || !url.trim()}>
+            {loading ? <span className="loader" /> : <>Continuar <FaArrowRight /></>}
           </button>
-        </div>
-      </div>
+        </form>
+        <p className="legal">Descarga únicamente contenido propio o que tengas permiso para usar.</p>
+      </section>
 
-      {error && (
-        <div className="error-message">
-          {error}
-        </div>
-      )}
-
-      {downloadStatus && (
-        <div className="success-message">
-          {downloadStatus}
-        </div>
-      )}
+      {notice && <div className={`notice ${notice.type}`} role="status">{notice.type === "success" && <FaCheckCircle />}<span>{notice.text}</span></div>}
 
       {videoInfo && (
-        <div className="video-section">
+        <section className="result-card">
           <VideoInfo videoInfo={videoInfo} />
-          <DownloadButton 
-            onDownload={handleDownload}
-            disabled={loading}
-          />
-        </div>
+          <DownloadButton videoInfo={videoInfo} onDownload={handleDownload} disabled={downloading} />
+        </section>
       )}
-    </div>
+
+      {!videoInfo && (
+        <section className="benefits">
+          <article><span className="benefit-icon violet"><FaBolt /></span><div><h2>En segundos</h2><p>Sin pasos innecesarios.</p></div></article>
+          <article><span className="benefit-icon coral"><FaMusic /></span><div><h2>Audio y video</h2><p>MP3 o MP4, tú eliges.</p></div></article>
+          <article><span className="benefit-icon mint"><FaCheckCircle /></span><div><h2>Calidad flexible</h2><p>Elige entre las opciones disponibles.</p></div></article>
+        </section>
+      )}
+    </main>
   );
 };
 
