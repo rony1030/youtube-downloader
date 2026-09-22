@@ -22,6 +22,13 @@ const safeFileName = (title) => title.normalize("NFKD").replace(/[<>:"/\\|?*\u00
 
 const infoFlags = { dumpSingleJson: true, noWarnings: true, noPlaylist: true, skipDownload: true };
 
+const publicError = (error, fallback) => {
+  if (/confirm you.?re not a bot|sign in/i.test(error.message || "")) {
+    return "YouTube bloqueó temporalmente este servidor. Prueba la versión local o inténtalo más tarde.";
+  }
+  return fallback;
+};
+
 const getVideoInfo = async (req, res) => {
   try {
     const url = parseUrl(req.body.url);
@@ -41,7 +48,7 @@ const getVideoInfo = async (req, res) => {
     });
   } catch (error) {
     console.error("Could not read video info:", error.message);
-    res.status(error.status || 500).json({ error: error.status ? error.message : "No pudimos leer este video. Puede ser privado o estar restringido." });
+    res.status(error.status || 500).json({ error: error.status ? error.message : publicError(error, "No pudimos leer este video. Puede ser privado o estar restringido.") });
   }
 };
 
@@ -70,7 +77,7 @@ const downloadVideo = async (req, res) => {
   } catch (error) {
     console.error("Download failed:", error.message);
     if (filePath) await fs.remove(filePath).catch(() => {});
-    if (!res.headersSent) res.status(error.status || 500).json({ error: error.status ? error.message : "No se pudo preparar la descarga. Intenta otra calidad." });
+    if (!res.headersSent) res.status(error.status || 500).json({ error: error.status ? error.message : publicError(error, "No se pudo preparar la descarga. Intenta otra calidad.") });
   }
 };
 
